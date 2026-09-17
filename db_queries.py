@@ -1,7 +1,7 @@
 from psycopg_pool import AsyncConnectionPool
-import psycopg
 import os
 from dotenv import load_dotenv
+from psycopg.rows import dict_row
 
 load_dotenv()
 
@@ -18,6 +18,8 @@ class Queries:
 
     async def get_books(self):
           async with self.pool.connection() as conn:
+                conn.row_factory = dict_row
+                
                 async with conn.cursor() as cur:
                     await cur.execute("SELECT * FROM book")
                     books = await cur.fetchall()
