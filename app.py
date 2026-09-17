@@ -1,13 +1,19 @@
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 from db_queries import Queries
-import asyncio
 
 queries = Queries()
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await queries.pool.open()
+    yield
+    await queries.pool.close()
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.get("/books")
 async def get_books():
-    all_books = await queries.get_books()
-    return all_books
+    return await queries.get_books()
 
