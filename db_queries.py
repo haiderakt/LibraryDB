@@ -1,8 +1,9 @@
 from psycopg_pool import ConnectionPool
 import psycopg
 import os
+from dotenv import load_dotenv
 
-DB_URL = os.environ("DATABASE_URL")
+load_dotenv()
 
 class Queries:
 

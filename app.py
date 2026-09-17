@@ -1,7 +1,7 @@
 from fastapi import FastAPI
-from db_queries import get_books
+from db_queries import Queries
 
-
+queries = Queries()
 app = FastAPI()
 
 
