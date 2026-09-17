@@ -20,7 +20,7 @@ async def get_books():
 
 
 @app.post("/books") 
-async def create_books(book: Book):
+async def create_book(book: Book):
     return await queries.create_book(book.title, book.author)
 
 
