@@ -1,7 +1,6 @@
 from psycopg_pool import ConnectionPool
 import psycopg
 import os
-from fastapi import FastAPI
 
 DB_URL = os.environ("DATABASE_URL")
 
