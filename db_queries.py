@@ -26,3 +26,43 @@ class Queries:
                     books = await cur.fetchall()
 
                 return books
+
+    async def create_book(self, title, author):
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
+
+            async with conn.cursor() as cur:
+                await cur.execute(
+                       """
+                       INSERT INTO book (title, author)
+                        VALUES (%s, %s)
+                        RETURNING *; 
+                       """,
+                       (title, author)
+                  )
+                results = await cur.fetchall()
+
+            await conn.commit()
+              
+        return results
+
+
+    async def delete_book(self, id):
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
+
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    DELETE FROM book
+                    WHERE id = %s
+                    RETURNING*;
+                    """,
+                    (id,)
+                )
+
+                results = await cur.fetchall()
+
+            await conn.commit()
+
+        return results

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from db_queries import Queries
+from basemodels import Book
 
 queries = Queries()
 
@@ -17,3 +18,12 @@ app = FastAPI(lifespan=lifespan)
 async def get_books():
     return await queries.get_books()
 
+
+@app.post("/books") 
+async def create_books(book: Book):
+    return await queries.create_book(book.title, book.author)
+
+
+@app.delete("/books/{book_id}")
+async def delete_book(book_id:int):
+    return await queries.delete_book(book_id)
