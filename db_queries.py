@@ -27,6 +27,22 @@ class Queries:
 
         return books
 
+    async def search_book(self, title):
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
+
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    SELECT * FROM book
+                    WHERE title LIKE %s
+                    """,
+                    f"%{title}%"
+                )
+                results = await cur.fetchall()
+
+            return results
+
     async def create_book(self, title, author):
         async with self.pool.connection() as conn:
             conn.row_factory = dict_row
