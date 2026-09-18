@@ -213,4 +213,23 @@ class Queries:
         return results
 
 
+    async def delete_borrowing(self, borrowed_id):
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
+
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    UPDATE borrowed
+                    SET returned_at = CURRENT_TIMESTAMP
+                    WHERE id = %s
+                    RETURNING *;
+                    """,
+                    (borrowed_id,)
+                )
+                results = await cur.fetchall()
+
+        return results
+
+
 

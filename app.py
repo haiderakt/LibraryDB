@@ -67,3 +67,8 @@ async def search_borrowing(customer_name: str):
 @app.put("/borrowed")
 async def create_borrowing(customer_id:int, book_id:int):
     return await queries.create_borrowing(customer_id, book_id)
+
+# delete borrowing(returned book)
+@app.put("/borrowed/{borrowed_id}/return")
+async def delete_borrowing(borrowed_id: int):
+    return await queries.delete_borrowing(borrowed_id)
