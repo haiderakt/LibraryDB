@@ -23,9 +23,9 @@ class Queries:
                 
             async with conn.cursor() as cur:
                 await cur.execute("SELECT * FROM book")
-                books = await cur.fetchall()
+                results = await cur.fetchall()
 
-        return books
+        return results
 
     async def search_book(self, title):
         async with self.pool.connection() as conn:
