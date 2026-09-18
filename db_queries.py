@@ -213,7 +213,7 @@ class Queries:
         return results
 
 
-    async def delete_borrowing(self, borrowed_id):
+    async def return_borrowing(self, borrowed_id):
         async with self.pool.connection() as conn:
             conn.row_factory = dict_row
 
