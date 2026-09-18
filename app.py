@@ -27,3 +27,7 @@ async def create_book(book: Book):
 @app.delete("/books/{book_id}")
 async def delete_book(book_id:int):
     return await queries.delete_book(book_id)
+
+@app.get("/customers")
+async def get_customer():
+    return await queries.get_customer()

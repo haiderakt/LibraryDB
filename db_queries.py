@@ -18,14 +18,14 @@ class Queries:
         )
 
     async def get_books(self):
-          async with self.pool.connection() as conn:
-                conn.row_factory = dict_row
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
                 
-                async with conn.cursor() as cur:
-                    await cur.execute("SELECT * FROM book")
-                    books = await cur.fetchall()
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT * FROM book")
+                books = await cur.fetchall()
 
-                return books
+        return books
 
     async def create_book(self, title, author):
         async with self.pool.connection() as conn:
@@ -64,5 +64,21 @@ class Queries:
                 results = await cur.fetchall()
 
             await conn.commit()
+
+        return results
+
+
+    async def get_customer(self):
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
+
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    SELECT * FROM customer;
+                    """
+                )
+
+                results = await cur.fetchall()
 
         return results
