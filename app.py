@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 from db_queries import Queries
-from basemodels import Book
+from basemodels import Book, Customer
 
 queries = Queries()
 
@@ -42,3 +42,9 @@ async def get_customer():
 @app.get("/customer/search")
 async def search_customer(name:str):
     return await queries.search_customer(name)
+
+# add in customer
+@app.post("/customer")
+async def create_customer(customer: Customer):
+    return await queries.create_customer(customer.name, customer.email)
+

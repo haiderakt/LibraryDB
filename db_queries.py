@@ -115,3 +115,22 @@ class Queries:
                 results = await cur.fetchall()
 
             return results
+
+
+    async def create_customer(self, name, email):
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
+
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    INSERT INTO customer (name, email)
+                    VALUES(%s, %s)
+                    RETURNING*;
+                    """,
+                    (name, email)   
+                )
+
+                results = await cur.fetchall()
+
+            return results
