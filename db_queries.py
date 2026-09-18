@@ -98,3 +98,20 @@ class Queries:
                 results = await cur.fetchall()
 
         return results
+
+
+    async def search_customer(self, name):
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
+
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    SELECT * FROM customer
+                    WHERE name ILIKE %s
+                    """,
+                    (f"%{name}%",)
+                )
+                results = await cur.fetchall()
+
+            return results

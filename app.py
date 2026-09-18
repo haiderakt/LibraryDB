@@ -34,8 +34,11 @@ async def delete_book(book_id:int):
     return await queries.delete_book(book_id)
 
 # all customers
-@app.get("/customers")
+@app.get("/customer")
 async def get_customer():
     return await queries.get_customer()
 
 # search customer
+@app.get("/customer/search")
+async def search_customer(name:str):
+    return await queries.search_customer(name)
