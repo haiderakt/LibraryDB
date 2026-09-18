@@ -194,3 +194,23 @@ class Queries:
         return results
 
 
+    async def create_borrowing(self, customer_id, book_id):
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
+
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    INSERT INTO borrowed (customer_id, book_id)
+                    VALUES(%s, %s)
+                    RETURNING*;
+                    """,
+                    (customer_id, book_id)
+                )
+
+                results = await cur.fetchall()
+
+        return results
+
+
+

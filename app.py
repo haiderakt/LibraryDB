@@ -53,13 +53,17 @@ async def create_customer(customer: Customer):
 async def delete_customer(customer_id: int):
     return await queries.delete_customer(customer_id)
 
-# all borrowings
+# all borrowed
 @app.get("/borrowed")
 async def get_borrowing():
     return await queries.get_borrowing()
 
-# search borrowing
+# search borrowed
 @app.get("/borrowed/search")
 async def search_borrowing(customer_name: str):
     return await queries.search_borrowing(customer_name)
 
+#add in borrowed
+@app.put("/borrowed")
+async def create_borrowing(customer_id:int, book_id:int):
+    return await queries.create_borrowing(customer_id, book_id)
