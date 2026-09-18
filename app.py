@@ -48,3 +48,7 @@ async def search_customer(name:str):
 async def create_customer(customer: Customer):
     return await queries.create_customer(customer.name, customer.email)
 
+# delete customer
+@app.delete("/customer/{customer_id}")
+async def delete_customer(customer_id: int):
+    return await queries.delete_customer(customer_id)    

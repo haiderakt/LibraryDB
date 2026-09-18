@@ -63,7 +63,7 @@ class Queries:
         return results
 
 
-    async def delete_book(self, id):
+    async def delete_book(self, book_id):
         async with self.pool.connection() as conn:
             conn.row_factory = dict_row
 
@@ -74,7 +74,7 @@ class Queries:
                     WHERE id = %s
                     RETURNING*;
                     """,
-                    (id,)
+                    (book_id,)
                 )
 
                 results = await cur.fetchall()
@@ -132,5 +132,28 @@ class Queries:
                 )
 
                 results = await cur.fetchall()
+            await conn.commit()
 
-            return results
+        return results
+
+
+
+    async def delete_customer(self, customer_id):
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
+
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    DELETE FROM customer
+                    WHERE id = %s
+                    RETURNING*;
+                    """,
+                    (customer_id,)
+                )
+
+                results = await cur.fetchall()
+
+            await conn.commit()
+
+        return results
