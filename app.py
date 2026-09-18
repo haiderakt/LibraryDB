@@ -18,9 +18,10 @@ app = FastAPI(lifespan=lifespan)
 async def get_books():
     return await queries.get_books()
 
+# search book
 @app.get("/books/search")
-async def search_book(book: Book):
-    return await queries.search_book(book.title)
+async def search_book(title:str):
+    return await queries.search_book(title)
 
 # add in books
 @app.post("/books") 
@@ -36,3 +37,5 @@ async def delete_book(book_id:int):
 @app.get("/customers")
 async def get_customer():
     return await queries.get_customer()
+
+# search customer

@@ -35,9 +35,9 @@ class Queries:
                 await cur.execute(
                     """
                     SELECT * FROM book
-                    WHERE title LIKE %s
+                    WHERE title ILIKE %s
                     """,
-                    f"%{title}%"
+                    (f"%{title}%",)
                 )
                 results = await cur.fetchall()
 
