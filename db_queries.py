@@ -172,3 +172,25 @@ class Queries:
 
         return result
 
+
+    async def search_borrowing(self, customer_name):
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
+
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    SELECT customer.name, book.title, borrowed.borrowed_at, borrowed.returned_at
+                    FROM borrowed
+                    INNER JOIN customer on borrowed.customer_id = customer.id
+                    INNER JOIN book on borrowed.book_id = book.id
+                    WHERE customer.name ILIKE %s
+                    """,
+                    (f"%{customer_name}%",)
+                )
+
+                results = await cur.fetchall()
+
+        return results
+
+
