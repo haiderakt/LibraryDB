@@ -132,7 +132,6 @@ class Queries:
                 )
 
                 results = await cur.fetchall()
-            await conn.commit()
 
         return results
 
@@ -157,3 +156,19 @@ class Queries:
             await conn.commit()
 
         return results
+
+    async def get_borrowing(self):
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
+
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    SELECT * FROM borrowed;
+                    """
+                )
+
+                result = await cur.fetchall()
+
+        return result
+

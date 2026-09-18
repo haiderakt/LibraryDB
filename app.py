@@ -51,4 +51,9 @@ async def create_customer(customer: Customer):
 # delete customer
 @app.delete("/customer/{customer_id}")
 async def delete_customer(customer_id: int):
-    return await queries.delete_customer(customer_id)    
+    return await queries.delete_customer(customer_id)
+
+#get borrowings
+@app.get("/borrowed")
+async def get_borrowing():
+    return await queries.get_borrowing()
