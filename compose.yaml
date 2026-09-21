@@ -1,0 +1,25 @@
+services:
+  db:
+    image: postgres:18
+    environment:
+      POSTGRES_USER: haider
+      POSTGRES_PASSWORD: haider
+      POSTGRES_DB: library
+    ports:
+      - "5433:5432"
+
+  backend:
+    image: library-api
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+
+  frontend:
+    image: library-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      - backend

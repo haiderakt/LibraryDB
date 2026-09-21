@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from db_queries import Queries
 from basemodels import Book, Customer, RefreshRequest
@@ -19,6 +20,14 @@ async def lifespan(app: FastAPI):
     await queries.pool.close()
 
 app = FastAPI(lifespan=lifespan)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # login endpoint
 @app.post("/login")
