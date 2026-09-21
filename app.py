@@ -1,19 +1,14 @@
-import jwt
 from fastapi import FastAPI, Depends, HTTPException
 from contextlib import asynccontextmanager
 from db_queries import Queries
 from basemodels import Book, Customer, RefreshRequest
-from dotenv import load_dotenv
-from datetime import datetime, timedelta
-from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
-
-import os
-
-load_dotenv()
-SECRET_KEY = os.environ["SECRET_KEY"]
-REFRESH_TOKEN_SECRET = os.environ["REFRESH_TOKEN_SECRET"]
-REFRESH_TOKEN_EXPIRE_DAYS = int(os.environ["REFRESH_TOKEN_EXPIRE_DAYS"])
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
+from fastapi.security import OAuth2PasswordRequestForm
+from auth import (
+    get_current_user,
+    create_access_token,
+    create_refresh_token,
+    verify_refresh_token
+)
 
 queries = Queries()
 
@@ -25,26 +20,6 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-async def get_current_user(token: str = Depends(oauth2_scheme)):
-    try:
-        payload = jwt.decode(
-            token,
-            SECRET_KEY,
-            algorithms=["HS256"]
-        )
-
-        return payload
-    except jwt.InvalidTokenError:
-        raise HTTPException(
-            status_code=401,
-            detail="Could not verify credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-@app.get("/protected")
-async def protected(user = Depends(get_current_user)):
-    return user
-
 # login endpoint
 @app.post("/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
@@ -55,53 +30,29 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
             status_code=401,
             detail="Incorrect username or password"
         )
-    token = jwt.encode(
-        {
-            "username": user["username"],
-            "role": user["role"],
-            "exp": datetime.now() + timedelta(minutes=30)
-        },
-        SECRET_KEY,
-        algorithm="HS256"
+    
+    token = create_access_token(
+    user["username"],
+    user["role"]
     )
 
-    refresh_token = jwt.encode(
-        {
-            "username": user["username"],
-            "role": user["role"],
-            "exp": datetime.now() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
-        },
-        REFRESH_TOKEN_SECRET,
-        algorithm="HS256"
-    )
+    refresh_token = create_refresh_token(
+    user["username"],
+    user["role"]
+)
 
     return {"access_token":token, "refresh_token":refresh_token, "token_type":"bearer"}
 
+# refresh token endpoint
 @app.post("/refresh")
 async def refresh(data: RefreshRequest):
     refresh_token = data.refresh_token
+    payload = verify_refresh_token(refresh_token)
 
-    try:
-        payload = jwt.decode(
-            refresh_token,
-            REFRESH_TOKEN_SECRET,
-            algorithms=["HS256"]
-        )
-    except jwt.InvalidTokenError:
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid refresh token"
-        )
-
-    access_token = jwt.encode(
-        {
-            "username": payload["username"],
-            "role": payload["role"],
-            "exp": datetime.now() + timedelta(minutes=30)
-        },
-        SECRET_KEY,
-        algorithm="HS256"
-    )
+    access_token = create_access_token(
+    payload["username"],
+    payload["role"]
+)
 
     return {
         "access_token": access_token,
