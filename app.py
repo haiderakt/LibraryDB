@@ -2,7 +2,7 @@ import jwt
 from fastapi import FastAPI, Depends, HTTPException
 from contextlib import asynccontextmanager
 from db_queries import Queries
-from basemodels import Book, Customer
+from basemodels import Book, Customer, RefreshRequest
 from dotenv import load_dotenv
 from datetime import datetime, timedelta
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
@@ -48,6 +48,7 @@ async def protected(user = Depends(get_current_user)):
 # login endpoint
 @app.post("/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+
     user = await queries.get_user(form_data.username, form_data.password)
     if user is None:
         raise HTTPException(
@@ -77,8 +78,35 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     return {"access_token":token, "refresh_token":refresh_token, "token_type":"bearer"}
 
 @app.post("/refresh")
-async def refresh():
-    pass
+async def refresh(data: RefreshRequest):
+    refresh_token = data.refresh_token
+
+    try:
+        payload = jwt.decode(
+            refresh_token,
+            REFRESH_TOKEN_SECRET,
+            algorithms=["HS256"]
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid refresh token"
+        )
+
+    access_token = jwt.encode(
+        {
+            "username": payload["username"],
+            "role": payload["role"],
+            "exp": datetime.now() + timedelta(minutes=30)
+        },
+        SECRET_KEY,
+        algorithm="HS256"
+    )
+
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
 
 
 # all books
