@@ -6,6 +6,9 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000
 const state = {
   page: 'dashboard', books: [], customers: [], borrowed: [], loading: true,
   error: '', notice: '', bookQuery: '', customerQuery: '', borrowingQuery: '', mobileNav: false,
+  authenticated: Boolean(localStorage.getItem('library_access_token')),
+  authLoading: false, authError: '', refreshPromise: null,
+  returnToBorrow: false, borrowCustomerId: '',
 };
 
 const icons = { ArrowLeft, ArrowRight, BookOpen, Check, ChevronDown, CircleAlert, Clock3, LayoutDashboard, Library, LogOut, Menu, MoreHorizontal, Plus, Search, Trash2, UserRound, UsersRound, X };
@@ -13,8 +16,52 @@ const escapeHtml = (value) => String(value ?? '').replace(/[&<>'"]/g, (character
 const formatDate = (value) => value ? new Intl.DateTimeFormat('en', { month: 'short', day: 'numeric', year: 'numeric' }).format(new Date(value)) : '—';
 const formatTime = (value) => value ? new Intl.DateTimeFormat('en', { hour: 'numeric', minute: '2-digit' }).format(new Date(value)) : '';
 
-async function api(path, options = {}) {
-  const response = await fetch(`${API_BASE_URL}${path}`, { headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }, ...options });
+function authTokens() {
+  return {
+    accessToken: localStorage.getItem('library_access_token'),
+    refreshToken: localStorage.getItem('library_refresh_token'),
+  };
+}
+
+function clearAuth(message = '') {
+  localStorage.removeItem('library_access_token');
+  localStorage.removeItem('library_refresh_token');
+  state.authenticated = false;
+  state.authLoading = false;
+  state.authError = message;
+  state.loading = false;
+  state.error = '';
+  state.notice = '';
+  render();
+}
+
+async function refreshAccessToken() {
+  if (state.refreshPromise) return state.refreshPromise;
+  const { refreshToken } = authTokens();
+  if (!refreshToken) throw new Error('Your session has expired. Please sign in again.');
+  state.refreshPromise = (async () => {
+    const response = await fetch(`${API_BASE_URL}/refresh`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+    if (!response.ok) throw new Error('Your session has expired. Please sign in again.');
+    const data = await response.json();
+    localStorage.setItem('library_access_token', data.access_token);
+    state.authenticated = true;
+    return data.access_token;
+  })().finally(() => { state.refreshPromise = null; });
+  return state.refreshPromise;
+}
+
+async function api(path, options = {}, retry = true) {
+  const { skipAuth = false, ...requestOptions } = options;
+  const headers = { ...(requestOptions.body instanceof URLSearchParams ? {} : { 'Content-Type': 'application/json' }), ...(requestOptions.headers || {}) };
+  if (!skipAuth && authTokens().accessToken) headers.Authorization = `Bearer ${authTokens().accessToken}`;
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...requestOptions, headers });
+  if (response.status === 401 && !skipAuth && retry) {
+    try { await refreshAccessToken(); return api(path, options, false); }
+    catch { clearAuth('Your session has expired. Please sign in again.'); throw new Error('Your session has expired. Please sign in again.'); }
+  }
   if (!response.ok) {
     let detail = `Request failed (${response.status})`;
     try { detail = (await response.json()).detail || detail; } catch { /* response may not be JSON */ }
@@ -24,15 +71,16 @@ async function api(path, options = {}) {
 }
 
 async function loadData() {
+  if (!state.authenticated) { state.loading = false; render(); return; }
   state.loading = true; state.error = ''; render();
   try {
     const [books, customers, borrowed] = await Promise.all([api('/books'), api('/customer'), api('/borrowed')]);
     state.books = books || []; state.customers = customers || []; state.borrowed = borrowed || [];
-  } catch (error) { state.error = error.message; } finally { state.loading = false; render(); }
+  } catch (error) { if (!state.authenticated) state.authError = error.message; else state.error = error.message; } finally { state.loading = false; render(); }
 }
 
 function notify(message, isError = false) {
-  state.notice = isError ? '' : message; state.error = isError ? message : ''; render();
+  state.notice = isError ? '' : message; state.error = isError && state.authenticated ? message : ''; if (isError && !state.authenticated) state.authError = message; render();
   window.setTimeout(() => { if (state.notice === message) { state.notice = ''; render(); } }, 3200);
 }
 
@@ -47,8 +95,12 @@ function getBorrowingRows() {
 function navItem(page, label, icon, count = '') { return `<button class="nav-item ${state.page === page ? 'active' : ''}" data-page="${page}"><i data-lucide="${icon}"></i><span>${label}</span>${count ? `<b>${count}</b>` : ''}</button>`; }
 function pageTitle() { return { dashboard: 'Overview', books: 'Books', customers: 'Customers', borrowing: 'Borrowing' }[state.page]; }
 
+function loginPage() {
+  return `<main class="auth-page"><div class="auth-orbit orbit-one"></div><div class="auth-orbit orbit-two"></div><section class="auth-card"><div class="auth-brand"><span class="brand-mark"><i data-lucide="library"></i></span><span>Circulation<br><em>Desk</em></span></div><p class="eyebrow">Library workspace</p><h1>Welcome back</h1><p class="auth-description">Sign in to manage your collection, members, and circulation.</p>${state.authError ? `<div class="auth-error"><i data-lucide="circle-alert"></i>${escapeHtml(state.authError)}</div>` : ''}<form data-form="login" class="login-form"><label>Username<input name="username" autocomplete="username" required autofocus placeholder="Enter your username" /></label><label>Password<input type="password" name="password" autocomplete="current-password" required placeholder="Enter your password" /></label><button class="primary-btn full-width" type="submit" ${state.authLoading ? 'disabled' : ''}>${state.authLoading ? '<span class="button-spinner"></span>Signing in...' : '<i data-lucide="arrow-right"></i>Sign in'}</button></form><small class="auth-footer">Your session is secured by the Library API.</small></section></main>`;
+}
+
 function renderShell(content) {
-  return `<div class="app-shell"><aside class="sidebar ${state.mobileNav ? 'open' : ''}"><div class="brand"><span class="brand-mark"><i data-lucide="library"></i></span><span>Circulation<br><em>Desk</em></span><button class="icon-btn mobile-close" data-action="close-nav" aria-label="Close navigation"><i data-lucide="x"></i></button></div><div class="workspace-label">Workspace</div><nav>${navItem('dashboard', 'Overview', 'layout-dashboard')}${navItem('books', 'Books', 'book-open', state.books.length)}${navItem('customers', 'Customers', 'users-round', state.customers.length)}${navItem('borrowing', 'Borrowing', 'clock-3', getBorrowingRows().filter((row) => !row.returned_at).length)}</nav><div class="sidebar-foot"><div class="status-dot"><span></span><div><strong>API connected</strong><small>${escapeHtml(API_BASE_URL.replace(/^https?:\/\//, ''))}</small></div></div><button class="nav-item muted" data-action="refresh"><i data-lucide="log-out"></i><span>Refresh data</span></button></div></aside><main class="main-content"><header class="topbar"><button class="icon-btn menu-toggle" data-action="open-nav" aria-label="Open navigation"><i data-lucide="menu"></i></button><div class="breadcrumbs"><span>Library</span><i data-lucide="chevron-down"></i><strong>${pageTitle()}</strong></div><div class="top-actions"><span class="date-label">${new Intl.DateTimeFormat('en', { weekday: 'long', month: 'short', day: 'numeric' }).format(new Date())}</span><button class="avatar" aria-label="Account">JD</button></div></header>${state.notice ? `<div class="toast success"><i data-lucide="check"></i>${escapeHtml(state.notice)}</div>` : ''}${state.error ? `<div class="toast error"><i data-lucide="circle-alert"></i>${escapeHtml(state.error)}<button class="toast-close" data-action="clear-error"><i data-lucide="x"></i></button></div>` : ''}<section class="page-content">${content}</section></main></div>`;
+  return `<div class="app-shell"><aside class="sidebar ${state.mobileNav ? 'open' : ''}"><div class="brand"><span class="brand-mark"><i data-lucide="library"></i></span><span>Circulation<br><em>Desk</em></span><button class="icon-btn mobile-close" data-action="close-nav" aria-label="Close navigation"><i data-lucide="x"></i></button></div><div class="workspace-label">Workspace</div><nav>${navItem('dashboard', 'Overview', 'layout-dashboard')}${navItem('books', 'Books', 'book-open', state.books.length)}${navItem('customers', 'Customers', 'users-round', state.customers.length)}${navItem('borrowing', 'Borrowing', 'clock-3', getBorrowingRows().filter((row) => !row.returned_at).length)}</nav><div class="sidebar-foot"><div class="status-dot"><span></span><div><strong>API connected</strong><small>${escapeHtml(API_BASE_URL.replace(/^https?:\/\//, ''))}</small></div></div><button class="nav-item muted" data-action="refresh"><i data-lucide="log-out"></i><span>Refresh data</span></button><button class="nav-item muted" data-action="logout"><i data-lucide="log-out"></i><span>Sign out</span></button></div></aside><main class="main-content"><header class="topbar"><button class="icon-btn menu-toggle" data-action="open-nav" aria-label="Open navigation"><i data-lucide="menu"></i></button><div class="breadcrumbs"><span>Library</span><i data-lucide="chevron-down"></i><strong>${pageTitle()}</strong></div><div class="top-actions"><span class="date-label">${new Intl.DateTimeFormat('en', { weekday: 'long', month: 'short', day: 'numeric' }).format(new Date())}</span><button class="avatar" aria-label="Sign out" data-action="logout">JD</button></div></header>${state.notice ? `<div class="toast success"><i data-lucide="check"></i>${escapeHtml(state.notice)}</div>` : ''}${state.error ? `<div class="toast error"><i data-lucide="circle-alert"></i>${escapeHtml(state.error)}<button class="toast-close" data-action="clear-error"><i data-lucide="x"></i></button></div>` : ''}<section class="page-content">${content}</section></main></div>`;
 }
 
 function pageHeader(eyebrow, title, description, action = '') { return `<div class="page-header"><div><p class="eyebrow">${eyebrow}</p><h1>${title}</h1><p class="page-description">${description}</p></div>${action}</div>`; }
@@ -77,9 +129,14 @@ function borrowingPage() {
 }
 function modal(type) {
   const isBook = type === 'book';
-  return `<div class="modal-backdrop" data-action="close-modal"><div class="modal" role="dialog" aria-modal="true" data-modal-content><div class="modal-head"><div><p class="eyebrow">New record</p><h2>${isBook ? 'Add a book' : type === 'customer' ? 'Add a customer' : 'Record borrowing'}</h2></div><button class="icon-btn" data-action="close-modal" aria-label="Close"><i data-lucide="x"></i></button></div><form data-form="${type}">${isBook ? `<label>Title<input name="title" required placeholder="e.g. The Left Hand of Darkness" /></label><label>Author<input name="author" required placeholder="e.g. Ursula K. Le Guin" /></label>` : type === 'customer' ? `<label>Name<input name="name" required placeholder="e.g. Maya Chen" /></label><label>Email<input type="email" name="email" required placeholder="maya@example.com" /></label>` : `<label>Customer ID<input type="number" name="customer_id" required min="1" placeholder="e.g. 12" /></label><label>Book ID<input type="number" name="book_id" required min="1" placeholder="e.g. 42" /></label><p class="form-hint">Use the IDs shown in the Books and Customers tables.</p>`}<button class="primary-btn full-width" type="submit"><i data-lucide="check"></i>${isBook ? 'Add book' : type === 'customer' ? 'Add customer' : 'Check out book'}</button></form></div></div>`;
+  const borrowForm = `<label>Customer<select name="customer_id" required><option value="">Choose a customer</option>${state.customers.map((customer) => `<option value="${escapeHtml(customer.id)}" ${String(customer.id) === String(state.borrowCustomerId) ? 'selected' : ''}>${escapeHtml(customer.name)} · ${escapeHtml(customer.email)}</option>`).join('')}</select></label><button type="button" class="inline-action" data-action="open-customer-from-borrow"><i data-lucide="plus"></i>Add a new customer</button><label>Book<select name="book_id" required><option value="">Choose a book</option>${state.books.map((book) => `<option value="${escapeHtml(book.id)}">${escapeHtml(book.title)} · ${escapeHtml(book.author)}</option>`).join('')}</select></label><p class="form-hint">Choose from the records already in your library.</p>`;
+  return `<div class="modal-backdrop" data-action="close-modal"><div class="modal" role="dialog" aria-modal="true" data-modal-content><div class="modal-head"><div><p class="eyebrow">New record</p><h2>${isBook ? 'Add a book' : type === 'customer' ? 'Add a customer' : 'Record borrowing'}</h2></div><button class="icon-btn" data-action="close-modal" aria-label="Close"><i data-lucide="x"></i></button></div><form data-form="${type}">${isBook ? `<label>Title<input name="title" required placeholder="e.g. The Left Hand of Darkness" /></label><label>Author<input name="author" required placeholder="e.g. Ursula K. Le Guin" /></label>` : type === 'customer' ? `<label>Name<input name="name" required placeholder="e.g. Maya Chen" /></label><label>Email<input type="email" name="email" required placeholder="maya@example.com" /></label>` : borrowForm}<button class="primary-btn full-width" type="submit"><i data-lucide="check"></i>${isBook ? 'Add book' : type === 'customer' ? 'Add customer' : 'Check out book'}</button></form></div></div>`;
 }
-function render() { const content = state.loading ? loadingState() : state.page === 'dashboard' ? dashboard() : state.page === 'books' ? booksPage() : state.page === 'customers' ? customersPage() : borrowingPage(); document.querySelector('#app').innerHTML = renderShell(content); createIcons({ icons }); }
+function render() {
+  const content = state.authenticated ? (state.loading ? loadingState() : state.page === 'dashboard' ? dashboard() : state.page === 'books' ? booksPage() : state.page === 'customers' ? customersPage() : borrowingPage()) : loginPage();
+  document.querySelector('#app').innerHTML = state.authenticated ? renderShell(content) : content;
+  createIcons({ icons });
+}
 function openModal(type) { document.querySelector('#app').insertAdjacentHTML('beforeend', modal(type)); createIcons({ icons }); }
 function closeModal() { document.querySelector('.modal-backdrop')?.remove(); }
 
@@ -90,10 +147,12 @@ document.addEventListener('click', async (event) => {
   if (action === 'open-nav') { state.mobileNav = true; render(); }
   if (action === 'close-nav') { state.mobileNav = false; render(); }
   if (action === 'clear-error') { state.error = ''; render(); }
+  if (action === 'logout') { clearAuth(); }
   if (action === 'refresh') await loadData();
   if (action === 'close-modal' && (!event.target.closest('[data-modal-content]') || event.target.closest('.modal-head button'))) closeModal();
   if (action === 'open-book') openModal('book');
   if (action === 'open-customer') openModal('customer');
+  if (action === 'open-customer-from-borrow') { state.returnToBorrow = true; closeModal(); openModal('customer'); }
   if (action === 'open-borrow') openModal('borrow');
   const deleteBook = event.target.closest('[data-delete-book]')?.dataset.deleteBook;
   if (deleteBook && window.confirm('Delete this book? This cannot be undone.')) { try { await api(`/books/${deleteBook}`, { method: 'DELETE' }); await loadData(); notify('Book deleted'); } catch (error) { notify(error.message, true); } }
@@ -103,5 +162,31 @@ document.addEventListener('click', async (event) => {
   if (returnId && window.confirm('Mark this book as returned?')) { try { await api(`/borrowed/${returnId}/return`, { method: 'PUT' }); await loadData(); notify('Book marked as returned'); } catch (error) { notify(error.message, true); } }
 });
 document.addEventListener('input', (event) => { const input = event.target.closest('[data-search]'); if (!input) return; if (input.dataset.search === 'books') state.bookQuery = input.value; if (input.dataset.search === 'customers') state.customerQuery = input.value; if (input.dataset.search === 'borrowing') state.borrowingQuery = input.value; render(); const next = document.querySelector(`[data-search="${input.dataset.search}"]`); next?.focus(); next?.setSelectionRange(next.value.length, next.value.length); });
-document.addEventListener('submit', async (event) => { const form = event.target.closest('[data-form]'); if (!form) return; event.preventDefault(); const data = Object.fromEntries(new FormData(form)); try { if (form.dataset.form === 'book') await api('/books', { method: 'POST', body: JSON.stringify(data) }); if (form.dataset.form === 'customer') await api('/customer', { method: 'POST', body: JSON.stringify(data) }); if (form.dataset.form === 'borrow') await api(`/borrowed?customer_id=${encodeURIComponent(data.customer_id)}&book_id=${encodeURIComponent(data.book_id)}`, { method: 'PUT' }); closeModal(); await loadData(); notify(form.dataset.form === 'borrow' ? 'Book checked out' : `${form.dataset.form === 'book' ? 'Book' : 'Customer'} added`); } catch (error) { notify(error.message, true); } });
+document.addEventListener('submit', async (event) => {
+  const form = event.target.closest('[data-form]'); if (!form) return; event.preventDefault();
+  const data = Object.fromEntries(new FormData(form));
+  if (form.dataset.form === 'login') {
+    state.authLoading = true; state.authError = ''; render();
+    try {
+      const body = new URLSearchParams({ username: data.username, password: data.password });
+      const tokens = await api('/login', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body, skipAuth: true });
+      localStorage.setItem('library_access_token', tokens.access_token);
+      localStorage.setItem('library_refresh_token', tokens.refresh_token);
+      state.authenticated = true; state.authLoading = false; state.page = 'dashboard';
+      await loadData();
+    } catch (error) { state.authLoading = false; state.authError = error.message === 'Failed to fetch' ? 'Unable to reach the Library API.' : error.message; render(); }
+    return;
+  }
+  try {
+    if (form.dataset.form === 'book') await api('/books', { method: 'POST', body: JSON.stringify(data) });
+    if (form.dataset.form === 'customer') {
+      const created = await api('/customer', { method: 'POST', body: JSON.stringify(data) });
+      state.borrowCustomerId = created?.[0]?.id ?? '';
+    }
+    if (form.dataset.form === 'borrow') await api(`/borrowed?customer_id=${encodeURIComponent(data.customer_id)}&book_id=${encodeURIComponent(data.book_id)}`, { method: 'PUT' });
+    closeModal(); await loadData();
+    notify(form.dataset.form === 'borrow' ? 'Book checked out' : `${form.dataset.form === 'book' ? 'Book' : 'Customer'} added`);
+    if (form.dataset.form === 'customer' && state.returnToBorrow) { state.returnToBorrow = false; openModal('borrow'); }
+  } catch (error) { notify(error.message, true); }
+});
 loadData();
