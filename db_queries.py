@@ -17,6 +17,27 @@ class Queries:
             open=False
         )
 
+    async def get_user(self, username, password): 
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
+
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    SELECT * FROM users
+                    WHERE username = %s
+                    AND password_hash = crypt(%s, password_hash)
+                    """,
+                    (username,password)
+                )
+
+
+                results = await cur.fetchone()
+
+        return results
+
+
+
     async def get_books(self):
         async with self.pool.connection() as conn:
             conn.row_factory = dict_row

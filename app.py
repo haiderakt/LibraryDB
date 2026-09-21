@@ -1,7 +1,16 @@
-from fastapi import FastAPI
+import jwt
+from fastapi import FastAPI, Depends
 from contextlib import asynccontextmanager
 from db_queries import Queries
 from basemodels import Book, Customer
+from dotenv import load_dotenv
+from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
+
+import os
+
+load_dotenv()
+SECRET_KEY = os.environ["SECRET_KEY"]
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 queries = Queries()
 
@@ -12,6 +21,26 @@ async def lifespan(app: FastAPI):
     await queries.pool.close()
 
 app = FastAPI(lifespan=lifespan)
+
+@app.get("/protected")
+async def protected(token: str = Depends(oauth2_scheme)):
+    print(token)
+    return {"message": "you have a token"}
+
+# login endpoint
+@app.post("/login")
+async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+    user = await queries.get_user(form_data.username, form_data.password)
+    token = jwt.encode(
+        {
+            "username": user["username"],
+            "role": user["role"]
+        },
+        SECRET_KEY,
+        algorithm="HS256"
+    )
+
+    return {"access_token":token, "token_type":"bearer"}
 
 # all books
 @app.get("/books")
