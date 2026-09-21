@@ -1,15 +1,18 @@
 import jwt
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from contextlib import asynccontextmanager
 from db_queries import Queries
 from basemodels import Book, Customer
 from dotenv import load_dotenv
+from datetime import datetime, timedelta
 from fastapi.security import OAuth2PasswordRequestForm, OAuth2PasswordBearer
 
 import os
 
 load_dotenv()
 SECRET_KEY = os.environ["SECRET_KEY"]
+REFRESH_TOKEN_SECRET = os.environ["REFRESH_TOKEN_SECRET"]
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.environ["REFRESH_TOKEN_EXPIRE_DAYS"])
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
 queries = Queries()
@@ -22,29 +25,65 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    try:
+        payload = jwt.decode(
+            token,
+            SECRET_KEY,
+            algorithms=["HS256"]
+        )
+
+        return payload
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=401,
+            detail="Could not verify credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
 @app.get("/protected")
-async def protected(token: str = Depends(oauth2_scheme)):
-    print(token)
-    return {"message": "you have a token"}
+async def protected(user = Depends(get_current_user)):
+    return user
 
 # login endpoint
 @app.post("/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
     user = await queries.get_user(form_data.username, form_data.password)
+    if user is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Incorrect username or password"
+        )
     token = jwt.encode(
         {
             "username": user["username"],
-            "role": user["role"]
+            "role": user["role"],
+            "exp": datetime.now() + timedelta(minutes=30)
         },
         SECRET_KEY,
         algorithm="HS256"
     )
 
-    return {"access_token":token, "token_type":"bearer"}
+    refresh_token = jwt.encode(
+        {
+            "username": user["username"],
+            "role": user["role"],
+            "exp": datetime.now() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+        },
+        REFRESH_TOKEN_SECRET,
+        algorithm="HS256"
+    )
+
+    return {"access_token":token, "refresh_token":refresh_token, "token_type":"bearer"}
+
+@app.post("/refresh")
+async def refresh():
+    pass
+
 
 # all books
 @app.get("/books")
-async def get_books():
+async def get_books(user = Depends(get_current_user)):
     return await queries.get_books()
 
 # search book

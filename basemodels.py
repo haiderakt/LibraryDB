@@ -7,3 +7,7 @@ class Book(BaseModel):
 class Customer(BaseModel):
     name: str
     email: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
