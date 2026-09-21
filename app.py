@@ -32,13 +32,13 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         )
     
     token = create_access_token(
-    user["username"],
-    user["role"]
+        user["username"],
+        user["role"]
     )
 
     refresh_token = create_refresh_token(
-    user["username"],
-    user["role"]
+        user["username"],
+        user["role"]
 )
 
     return {"access_token":token, "refresh_token":refresh_token, "token_type":"bearer"}
