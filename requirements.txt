@@ -1,10 +1,8 @@
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
-asyncio==4.0.0
 click==8.5.0
 fastapi==0.141.1
-git-filter-repo==2.47.0
 h11==0.16.0
 idna==3.19
 psycopg==3.3.5
