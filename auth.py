@@ -14,7 +14,6 @@ REFRESH_TOKEN_EXPIRE_DAYS = int(os.environ["REFRESH_TOKEN_EXPIRE_DAYS"])
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="login")
 
-
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     try:
         payload = jwt.decode(
@@ -68,3 +67,14 @@ def verify_refresh_token(refresh_token):
             status_code=401,
             detail="Invalid refresh token"
         )
+
+
+def required_role(*required_role: str):
+    async def role_checker(user=Depends(get_current_user)):
+        if user["role"] not in required_role:
+            raise HTTPException(
+                status_code=403,
+                detail="You are not allowed to do that"
+            )
+        
+    return role_checker

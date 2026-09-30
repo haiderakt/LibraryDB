@@ -1,14 +1,15 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException 
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from db_queries import Queries
+from db_queries import Queries 
 from basemodels import Book, Customer, RefreshRequest
-from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.security import OAuth2PasswordRequestForm 
 from auth import (
     get_current_user,
     create_access_token,
     create_refresh_token,
-    verify_refresh_token
+    verify_refresh_token,
+    required_role
 )
 
 queries = Queries()
@@ -29,7 +30,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# login endpoint
 @app.post("/login")
 async def login(form_data: OAuth2PasswordRequestForm = Depends()):
 
@@ -38,7 +38,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         raise HTTPException(
             status_code=401,
             detail="Incorrect username or password"
-        )
+        ) #error handling for wrong credentials
     
     token = create_access_token(
         user["username"],
@@ -71,60 +71,60 @@ async def refresh(data: RefreshRequest):
 
 # all books
 @app.get("/books")
-async def get_books(user = Depends(get_current_user)):
+async def get_books(_ = Depends(get_current_user)):
     return await queries.get_books()
 
 # search book
 @app.get("/books/search")
-async def search_book(title:str, user=Depends(get_current_user)):
+async def search_book(title:str, _=Depends(get_current_user)):
     return await queries.search_book(title)
 
 # add in books
 @app.post("/books") 
-async def create_book(book: Book, user=Depends(get_current_user)):
+async def create_book(book: Book, _=Depends(required_role("admin"))):
     return await queries.create_book(book.title, book.author)
 
 # delete book
 @app.delete("/books/{book_id}")
-async def delete_book(book_id:int, user=Depends(get_current_user)):
+async def delete_book(book_id:int, _=Depends(required_role("admin"))):
     return await queries.delete_book(book_id)
 
 # all customers
 @app.get("/customer")
-async def get_customer(user=Depends(get_current_user)):
+async def get_customer(_=Depends(required_role("admin", "librarian"))):
     return await queries.get_customer()
 
 # search customer
 @app.get("/customer/search")
-async def search_customer(name:str, user=Depends(get_current_user)):
+async def search_customer(name:str, _=Depends(required_role("admin", "librarian"))):
     return await queries.search_customer(name)
 
 # add in customer
 @app.post("/customer")
-async def create_customer(customer: Customer, user=Depends(get_current_user)):
+async def create_customer(customer: Customer, _=Depends(required_role("admin", "librarian"))):
     return await queries.create_customer(customer.name, customer.email)
 
 # delete customer
 @app.delete("/customer/{customer_id}")
-async def delete_customer(customer_id: int, user=Depends(get_current_user)):
+async def delete_customer(customer_id: int, _=Depends(required_role("admin"))):
     return await queries.delete_customer(customer_id)
 
 # all borrowed
 @app.get("/borrowed")
-async def get_borrowing(user=Depends(get_current_user)):
+async def get_borrowing(_=Depends(required_role("admin", "librarian"))):
     return await queries.get_borrowing()
 
 # search borrowed
 @app.get("/borrowed/search")
-async def search_borrowing(customer_name: str, user=Depends(get_current_user)):
+async def search_borrowing(customer_name: str, _=Depends(required_role("admin", "librarian"))):
     return await queries.search_borrowing(customer_name)
 
 #add in borrowed
 @app.put("/borrowed")
-async def create_borrowing(customer_id:int, book_id:int, user=Depends(get_current_user)):
+async def create_borrowing(customer_id:int, book_id:int, _=Depends(required_role("admin", "librarian"))):
     return await queries.create_borrowing(customer_id, book_id)
 
 # delete borrowing(returned book)
 @app.put("/borrowed/{borrowed_id}/return")
-async def return_borrowing(borrowed_id: int, user=Depends(get_current_user)):
+async def return_borrowing(borrowed_id: int, _=Depends(required_role("admin", "librarian"))):
     return await queries.return_borrowing(borrowed_id)
