@@ -64,18 +64,18 @@ class Queries:
 
             return results
 
-    async def create_book(self, title, author):
+    async def create_book(self, title, author, price):
         async with self.pool.connection() as conn:
             conn.row_factory = dict_row
 
             async with conn.cursor() as cur:
                 await cur.execute(
                        """
-                       INSERT INTO book (title, author)
-                        VALUES (%s, %s)
+                       INSERT INTO book (title, author, price)
+                        VALUES (%s, %s, %s)
                         RETURNING *; 
                        """,
-                       (title, author)
+                       (title, author, price)
                   )
                 results = await cur.fetchall()
 
@@ -185,7 +185,19 @@ class Queries:
             async with conn.cursor() as cur:
                 await cur.execute(
                     """
-                    SELECT * FROM borrowed;
+                    SELECT
+                        borrowed.id,
+                        customer.name AS customer,
+                        book.title AS book,
+                        book.price AS fee,
+                        borrowed.borrowed_at,
+                        borrowed.returned_at
+                    FROM borrowed
+                    LEFT JOIN customer
+                        ON borrowed.customer_id = customer.id
+                    LEFT JOIN book
+                        ON borrowed.book_id = book.id
+                    ORDER BY borrowed.borrowed_at DESC;
                     """
                 )
 
@@ -216,22 +228,76 @@ class Queries:
 
 
     async def create_borrowing(self, customer_id, book_id):
+
         async with self.pool.connection() as conn:
             conn.row_factory = dict_row
 
             async with conn.cursor() as cur:
                 await cur.execute(
                     """
+                    SELECT id
+                    FROM customer
+                    WHERE id = %s;
+                    """,
+                    (customer_id,)
+                )
+                customer = await cur.fetchone()
+
+                if customer is None:
+                    raise ValueError("Customer not found")
+
+                await cur.execute(
+                    """
+                    SELECT id, price
+                    FROM book
+                    WHERE id = %s;
+                    """,
+                    (book_id,)
+                )
+
+                book = await cur.fetchone()
+
+                if book is None:
+                    raise ValueError("Book not found")
+
+                await cur.execute(
+                    """
+                    SELECT id
+                    FROM borrowed
+                    WHERE book_id = %s
+                    AND returned_at IS NULL;
+                    """,
+                    (book_id,)
+                )
+
+                active_borrowing = await cur.fetchone()
+
+                if active_borrowing is not None:
+                    raise ValueError("Book is already borrowed")
+
+                await cur.execute(
+                    """
                     INSERT INTO borrowed (customer_id, book_id)
-                    VALUES(%s, %s)
-                    RETURNING*;
+                    VALUES (%s, %s)
+                    RETURNING *;
                     """,
                     (customer_id, book_id)
                 )
 
-                results = await cur.fetchall()
+                borrowing = await cur.fetchone()
 
-        return results
+                await cur.execute(
+                    """
+                    INSERT INTO accounting
+                    (book_id, customer_id, amount, transaction_type)
+                    VALUES (%s, %s, %s, 'borrowing_fee');
+                    """,
+                    (book_id, customer_id, book["price"])
+                )
+
+            await conn.commit()
+
+        return borrowing
 
 
     async def return_borrowing(self, borrowed_id):
@@ -244,13 +310,53 @@ class Queries:
                     UPDATE borrowed
                     SET returned_at = CURRENT_TIMESTAMP
                     WHERE id = %s
+                    AND returned_at IS NULL
                     RETURNING *;
                     """,
                     (borrowed_id,)
                 )
-                results = await cur.fetchall()
+                results = await cur.fetchone()
+
+            await conn.commit()
 
         return results
+
+
+    async def get_accounting(self):
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
+
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    SELECT * FROM accounting;
+                    """
+                )
+
+                result = await cur.fetchall()
+
+
+        return result
+
+
+
+    async def get_total_accounting(self):
+
+        async with self.pool.connection() as conn:
+            conn.row_factory = dict_row
+
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    SELECT COALESCE(SUM(amount), 0) AS total_income
+                    FROM accounting
+                    WHERE transaction_type = 'borrowing_fee';
+                    """
+                )
+
+                result = await cur.fetchone()
+
+        return result
 
 
 

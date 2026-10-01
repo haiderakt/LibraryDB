@@ -4,7 +4,7 @@ import './styles.css';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8000';
 
 const state = {
-  page: 'dashboard', books: [], customers: [], borrowed: [], bookResults: null, customerResults: null, borrowingResults: null, searchVersion: { books: 0, customers: 0, borrowing: 0 }, loading: true,
+  page: 'dashboard', books: [], customers: [], borrowed: [], accounting: [], totalIncome: 0, bookResults: null, customerResults: null, borrowingResults: null, searchVersion: { books: 0, customers: 0, borrowing: 0 }, loading: true,
   error: '', notice: '', bookQuery: '', customerQuery: '', borrowingQuery: '', mobileNav: false,
   authenticated: Boolean(localStorage.getItem('library_access_token')),
   authLoading: false, authError: '', refreshPromise: null,
@@ -51,7 +51,7 @@ function isAdmin() {
 }
 
 function canVisitPage(page) {
-  return ['dashboard', 'books'].includes(page) || (isLibrarian() && ['customers', 'borrowing'].includes(page));
+  return ['dashboard', 'books'].includes(page) || (isLibrarian() && ['customers', 'borrowing'].includes(page)) || (isAdmin() && page === 'accounting');
 }
 
 function permissionMessage() {
@@ -122,15 +122,26 @@ async function loadData() {
   }
   state.loading = true; state.error = ''; render();
   try {
-    const requests = [api('/books')];
-    if (isLibrarian()) requests.push(api('/customer'), api('/borrowed'));
-    const results = await Promise.allSettled(requests);
-    if (results[0].status === 'rejected') throw results[0].reason;
-    state.books = results[0].value || [];
+    const requests = { books: api('/books') };
+    if (isLibrarian()) {
+      requests.customers = api('/customer');
+      requests.borrowed = api('/borrowed');
+    }
+    if (isAdmin()) {
+      requests.accounting = api('/accounting');
+      requests.totalIncome = api('/accounting/total');
+    }
+    const requestEntries = Object.entries(requests);
+    const settled = await Promise.allSettled(requestEntries.map(([, request]) => request));
+    const results = Object.fromEntries(requestEntries.map(([key], index) => [key, settled[index]]));
+    if (results.books.status === 'rejected') throw results.books.reason;
+    state.books = results.books.value || [];
     state.bookResults = null;
-    state.customers = isLibrarian() && results[1]?.status === 'fulfilled' ? results[1].value || [] : [];
-    state.borrowed = isLibrarian() && results[2]?.status === 'fulfilled' ? results[2].value || [] : [];
-    const denied = results.slice(1).find((result) => result.status === 'rejected');
+    state.customers = results.customers?.status === 'fulfilled' ? results.customers.value || [] : [];
+    state.borrowed = results.borrowed?.status === 'fulfilled' ? results.borrowed.value || [] : [];
+    state.accounting = results.accounting?.status === 'fulfilled' ? results.accounting.value || [] : [];
+    state.totalIncome = results.totalIncome?.status === 'fulfilled' ? Number(results.totalIncome.value?.total_income || 0) : 0;
+    const denied = Object.values(results).find((result) => result.status === 'rejected');
     if (denied) state.error = denied.reason.message;
   } catch (error) { if (!state.authenticated) state.authError = error.message; else state.error = error.message; } finally { state.loading = false; render(); }
 }
@@ -144,12 +155,13 @@ function getBorrowingRows(records = state.borrowed) {
   return records.map((record) => ({
     ...record,
     customerName: record.customer || record.customer_name || record.name || state.customers.find((customer) => customer.id === record.customer_id)?.name || `Customer #${record.customer_id ?? '—'}`,
-    bookTitle: record.title || record.book_title || state.books.find((book) => book.id === record.book_id)?.title || `Book #${record.book_id ?? '—'}`,
+    bookTitle: record.book || record.title || record.book_title || state.books.find((book) => book.id === record.book_id)?.title || `Book #${record.book_id ?? '—'}`,
+    id: record.id || state.borrowed.find((item) => item.customer === record.customer && item.book === record.book && item.borrowed_at === record.borrowed_at)?.id,
   }));
 }
 
 function navItem(page, label, icon, count = '') { return `<button class="nav-item ${state.page === page ? 'active' : ''}" data-page="${page}"><i data-lucide="${icon}"></i><span>${label}</span>${count ? `<b>${count}</b>` : ''}</button>`; }
-function pageTitle() { return { dashboard: 'Overview', books: 'Books', customers: 'Customers', borrowing: 'Borrowing' }[state.page]; }
+function pageTitle() { return { dashboard: 'Overview', books: 'Books', customers: 'Customers', borrowing: 'Borrowing', accounting: 'Accounting' }[state.page]; }
 
 function loginPage() {
   return `<main class="auth-page"><div class="auth-orbit orbit-one"></div><div class="auth-orbit orbit-two"></div><section class="auth-card"><div class="auth-brand"><span class="brand-mark"><i data-lucide="library"></i></span><span>Circulation<br><em>Desk</em></span></div><p class="eyebrow">Library workspace</p><h1>Welcome back</h1><p class="auth-description">Sign in to manage your collection, members, and circulation.</p>${state.authError ? `<div class="auth-error"><i data-lucide="circle-alert"></i>${escapeHtml(state.authError)}</div>` : ''}<form data-form="login" class="login-form"><label>Username<input name="username" autocomplete="username" required autofocus placeholder="Enter your username" /></label><label>Password<input type="password" name="password" autocomplete="current-password" required placeholder="Enter your password" /></label><button class="primary-btn full-width" type="submit" ${state.authLoading ? 'disabled' : ''}>${state.authLoading ? '<span class="button-spinner"></span>Signing in...' : '<i data-lucide="arrow-right"></i>Sign in'}</button></form><small class="auth-footer">Your session is secured by the Library API.</small></section></main>`;
@@ -157,7 +169,7 @@ function loginPage() {
 
 function renderShell(content) {
   const username = currentUser();
-  const protectedNav = isLibrarian() ? `${navItem('customers', 'Customers', 'users-round', state.customers.length)}${navItem('borrowing', 'Borrowing', 'clock-3', getBorrowingRows().filter((row) => !row.returned_at).length)}` : '';
+  const protectedNav = `${isLibrarian() ? `${navItem('customers', 'Customers', 'users-round', state.customers.length)}${navItem('borrowing', 'Borrowing', 'clock-3', getBorrowingRows().filter((row) => !row.returned_at).length)}` : ''}${isAdmin() ? navItem('accounting', 'Accounting', 'layout-dashboard') : ''}`;
   return `<div class="app-shell"><aside class="sidebar ${state.mobileNav ? 'open' : ''}"><div class="brand"><span class="brand-mark"><i data-lucide="library"></i></span><span>Circulation<br><em>Desk</em></span><button class="icon-btn mobile-close" data-action="close-nav" aria-label="Close navigation"><i data-lucide="x"></i></button></div><div class="workspace-label">Workspace</div><nav>${navItem('dashboard', 'Overview', 'layout-dashboard')}${navItem('books', 'Books', 'book-open', state.books.length)}${protectedNav}</nav><div class="sidebar-foot"><div class="status-dot"><span></span><div><strong>API connected</strong><small>${escapeHtml(API_BASE_URL.replace(/^https?:\/\//, ''))}</small></div></div><button class="nav-item muted" data-action="refresh"><i data-lucide="rotate-cw"></i><span>Refresh data</span></button><button class="nav-item muted" data-action="logout"><i data-lucide="log-out"></i><span>Sign out</span></button></div></aside><main class="main-content"><header class="topbar"><button class="icon-btn menu-toggle" data-action="open-nav" aria-label="Open navigation"><i data-lucide="menu"></i></button><div class="breadcrumbs"><span>Library</span><i data-lucide="chevron-down"></i><strong>${pageTitle()}</strong></div><div class="top-actions"><span class="date-label">${new Intl.DateTimeFormat('en', { weekday: 'long', month: 'short', day: 'numeric' }).format(new Date())}</span><span class="role-label">${escapeHtml(currentRole())}</span><button class="avatar" aria-label="Sign out" data-action="logout">${escapeHtml(userInitials(username))}</button></div></header>${state.notice ? `<div class="toast success"><i data-lucide="check"></i>${escapeHtml(state.notice)}</div>` : ''}${state.error ? `<div class="toast error"><i data-lucide="circle-alert"></i>${escapeHtml(state.error)}<button class="toast-close" data-action="clear-error"><i data-lucide="x"></i></button></div>` : ''}<section class="page-content">${content}</section></main></div>`;
 }
 
@@ -177,7 +189,7 @@ function dashboard() {
 function searchableHeader(type, title, description, query, action) { const canCreate = type === 'Books' ? isAdmin() : isLibrarian(); const addButton = canCreate ? `<button class="primary-btn" data-action="${action}"><i data-lucide="plus"></i>Add ${type === 'Books' ? 'book' : 'customer'}</button>` : ''; return `${pageHeader(type, title, description, addButton)}<div class="toolbar"><label class="search-box"><i data-lucide="search"></i><input data-search="${type.toLowerCase()}" value="${escapeHtml(query)}" placeholder="Search ${type.toLowerCase()}..." /></label></div>`; }
 function booksPage() {
   const books = state.bookQuery ? state.bookResults ?? state.books.filter((book) => book.title?.toLowerCase().includes(state.bookQuery.toLowerCase())) : state.books;
-  return `${searchableHeader('Books', 'Collection', 'Keep your shelves organized and easy to explore.', state.bookQuery, 'open-book')}<section class="panel table-panel"><div class="table-meta"><span>${books.length} ${books.length === 1 ? 'title' : 'titles'}</span><span class="meta-status"><i data-lucide="check"></i>Synced just now</span></div>${books.length ? `<div class="table-wrap"><table><thead><tr><th>Title</th><th>Author</th><th>ID</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>${books.map((book) => `<tr><td><div class="item-title"><span class="book-cover"><i data-lucide="book-open"></i></span><strong>${escapeHtml(book.title)}</strong></div></td><td>${escapeHtml(book.author)}</td><td><span class="id-pill">#${escapeHtml(book.id)}</span></td>${isAdmin() ? `<td class="row-actions"><button class="icon-btn danger" data-delete-book="${escapeHtml(book.id)}" aria-label="Delete ${escapeHtml(book.title)}"><i data-lucide="trash-2"></i></button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : emptyState('book-open', state.bookQuery ? 'No books found' : 'Your collection is empty', state.bookQuery ? 'Try a different title.' : 'Add your first book to get started.')}</section>`;
+  return `${searchableHeader('Books', 'Collection', 'Keep your shelves organized and easy to explore.', state.bookQuery, 'open-book')}<section class="panel table-panel"><div class="table-meta"><span>${books.length} ${books.length === 1 ? 'title' : 'titles'}</span><span class="meta-status"><i data-lucide="check"></i>Synced just now</span></div>${books.length ? `<div class="table-wrap"><table><thead><tr><th>Title</th><th>Author</th><th>Price</th><th>ID</th>${isAdmin() ? '<th></th>' : ''}</tr></thead><tbody>${books.map((book) => `<tr><td><div class="item-title"><span class="book-cover"><i data-lucide="book-open"></i></span><strong>${escapeHtml(book.title)}</strong></div></td><td>${escapeHtml(book.author)}</td><td>${book.price == null ? '—' : escapeHtml(Number(book.price).toFixed(2))}</td><td><span class="id-pill">#${escapeHtml(book.id)}</span></td>${isAdmin() ? `<td class="row-actions"><button class="icon-btn danger" data-delete-book="${escapeHtml(book.id)}" aria-label="Delete ${escapeHtml(book.title)}"><i data-lucide="trash-2"></i></button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : emptyState('book-open', state.bookQuery ? 'No books found' : 'Your collection is empty', state.bookQuery ? 'Try a different title.' : 'Add your first book to get started.')}</section>`;
 }
 function customersPage() {
   const customers = state.customerQuery ? state.customerResults ?? state.customers.filter((customer) => customer.name?.toLowerCase().includes(state.customerQuery.toLowerCase())) : state.customers;
@@ -187,14 +199,21 @@ function borrowingPage() {
   const rows = state.borrowingQuery ? getBorrowingRows(state.borrowingResults).filter((row) => row.customerName.toLowerCase().includes(state.borrowingQuery.toLowerCase())) : getBorrowingRows();
   return `${pageHeader('Circulation', 'Borrowing history', 'Keep track of every book on its journey.', '<button class="primary-btn" data-action="open-borrow"><i data-lucide="plus"></i>Record borrowing</button>')}<div class="toolbar"><label class="search-box"><i data-lucide="search"></i><input data-search="borrowing" value="${escapeHtml(state.borrowingQuery)}" placeholder="Search by customer name..." /></label><button class="filter-btn"><i data-lucide="more-horizontal"></i></button></div><section class="panel table-panel"><div class="table-meta"><span>${rows.length} ${rows.length === 1 ? 'record' : 'records'}</span><span class="meta-status"><i data-lucide="clock-3"></i>${rows.filter((row) => !row.returned_at).length} currently out</span></div>${rows.length ? `<div class="table-wrap"><table><thead><tr><th>Customer</th><th>Book</th><th>Borrowed</th><th>Returned</th><th></th></tr></thead><tbody>${rows.map((row) => `<tr><td><div class="item-title"><span class="person-avatar">${escapeHtml(row.customerName).slice(0, 1).toUpperCase()}</span><strong>${escapeHtml(row.customerName)}</strong></div></td><td>${escapeHtml(row.bookTitle)}</td><td>${formatDate(row.borrowed_at)}</td><td>${row.returned_at ? `<span class="returned-label"><i data-lucide="check"></i>${formatDate(row.returned_at)}</span>` : '<span class="active-label">Currently out</span>'}</td><td class="row-actions">${!row.returned_at && row.id ? `<button class="return-btn" data-return="${escapeHtml(row.id)}">Return</button>` : ''}</td></tr>`).join('')}</tbody></table></div>` : emptyState('clock-3', state.borrowingQuery ? 'No records found' : 'No borrowing history', state.borrowingQuery ? 'Try a different customer name.' : 'Borrowing records will appear here.')}</section>`;
 }
+function accountingPage() {
+  return `${pageHeader('Administration', 'Accounting', 'Borrowing fees recorded by the library.', '')}<div class="stats-grid">${statCard('Total income', Number(state.totalIncome).toFixed(2), 'Recorded borrowing fees', 'layout-dashboard', 'teal')}</div><section class="panel table-panel"><div class="table-meta"><span>${state.accounting.length} ${state.accounting.length === 1 ? 'transaction' : 'transactions'}</span><span class="meta-status"><i data-lucide="check"></i>Synced just now</span></div>${state.accounting.length ? `<div class="table-wrap"><table><thead><tr><th>Transaction</th><th>Customer</th><th>Customer ID</th><th>Book</th><th>Book ID</th><th>Amount</th></tr></thead><tbody>${state.accounting.map((entry) => {
+    const customerName = state.customers.find((customer) => String(customer.id) === String(entry.customer_id))?.name || 'Unknown customer';
+    const bookTitle = state.books.find((book) => String(book.id) === String(entry.book_id))?.title || 'Unknown book';
+    return `<tr><td>${escapeHtml(entry.transaction_type || '—')}</td><td>${escapeHtml(customerName)}</td><td>${escapeHtml(entry.customer_id ?? '—')}</td><td>${escapeHtml(bookTitle)}</td><td>${escapeHtml(entry.book_id ?? '—')}</td><td>${entry.amount == null ? '—' : escapeHtml(Number(entry.amount).toFixed(2))}</td></tr>`;
+  }).join('')}</tbody></table></div>` : emptyState('layout-dashboard', 'No transactions yet', 'Borrowing fees will appear here.')}</section>`;
+}
 function modal(type) {
   const isBook = type === 'book';
   const borrowForm = `<label>Customer<select name="customer_id" required><option value="">Choose a customer</option>${state.customers.map((customer) => `<option value="${escapeHtml(customer.id)}" ${String(customer.id) === String(state.borrowCustomerId) ? 'selected' : ''}>${escapeHtml(customer.name)} · ${escapeHtml(customer.email)}</option>`).join('')}</select></label><button type="button" class="inline-action" data-action="open-customer-from-borrow"><i data-lucide="plus"></i>Add a new customer</button><label>Book<select name="book_id" required><option value="">Choose a book</option>${state.books.map((book) => `<option value="${escapeHtml(book.id)}">${escapeHtml(book.title)} · ${escapeHtml(book.author)}</option>`).join('')}</select></label><p class="form-hint">Choose from the records already in your library.</p>`;
-  return `<div class="modal-backdrop" data-action="close-modal"><div class="modal" role="dialog" aria-modal="true" data-modal-content><div class="modal-head"><div><p class="eyebrow">New record</p><h2>${isBook ? 'Add a book' : type === 'customer' ? 'Add a customer' : 'Record borrowing'}</h2></div><button class="icon-btn" data-action="close-modal" aria-label="Close"><i data-lucide="x"></i></button></div><form data-form="${type}">${isBook ? `<label>Title<input name="title" required placeholder="e.g. The Left Hand of Darkness" /></label><label>Author<input name="author" required placeholder="e.g. Ursula K. Le Guin" /></label>` : type === 'customer' ? `<label>Name<input name="name" required placeholder="e.g. Maya Chen" /></label><label>Email<input type="email" name="email" required placeholder="maya@example.com" /></label>` : borrowForm}<button class="primary-btn full-width" type="submit"><i data-lucide="check"></i>${isBook ? 'Add book' : type === 'customer' ? 'Add customer' : 'Check out book'}</button></form></div></div>`;
+  return `<div class="modal-backdrop" data-action="close-modal"><div class="modal" role="dialog" aria-modal="true" data-modal-content><div class="modal-head"><div><p class="eyebrow">New record</p><h2>${isBook ? 'Add a book' : type === 'customer' ? 'Add a customer' : 'Record borrowing'}</h2></div><button class="icon-btn" data-action="close-modal" aria-label="Close"><i data-lucide="x"></i></button></div><form data-form="${type}">${isBook ? `<label>Title<input name="title" required placeholder="e.g. The Left Hand of Darkness" /></label><label>Author<input name="author" required placeholder="e.g. Ursula K. Le Guin" /></label><label>Price<input type="number" name="price" min="0" step="0.01" required placeholder="0.00" /></label>` : type === 'customer' ? `<label>Name<input name="name" required placeholder="e.g. Maya Chen" /></label><label>Email<input type="email" name="email" required placeholder="maya@example.com" /></label>` : borrowForm}<button class="primary-btn full-width" type="submit"><i data-lucide="check"></i>${isBook ? 'Add book' : type === 'customer' ? 'Add customer' : 'Check out book'}</button></form></div></div>`;
 }
 function render() {
   if (state.authenticated && !canVisitPage(state.page)) state.page = 'dashboard';
-  const content = state.authenticated ? (state.loading ? loadingState() : state.page === 'dashboard' ? dashboard() : state.page === 'books' ? booksPage() : state.page === 'customers' ? customersPage() : borrowingPage()) : loginPage();
+  const content = state.authenticated ? (state.loading ? loadingState() : state.page === 'dashboard' ? dashboard() : state.page === 'books' ? booksPage() : state.page === 'customers' ? customersPage() : state.page === 'accounting' ? accountingPage() : borrowingPage()) : loginPage();
   document.querySelector('#app').innerHTML = state.authenticated ? renderShell(content) : content;
   createIcons({ icons });
 }

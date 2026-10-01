@@ -82,7 +82,7 @@ async def search_book(title:str, _=Depends(get_current_user)):
 # add in books
 @app.post("/books") 
 async def create_book(book: Book, _=Depends(required_role("admin"))):
-    return await queries.create_book(book.title, book.author)
+    return await queries.create_book(book.title, book.author, book.price)
 
 # delete book
 @app.delete("/books/{book_id}")
@@ -122,9 +122,32 @@ async def search_borrowing(customer_name: str, _=Depends(required_role("admin", 
 #add in borrowed
 @app.put("/borrowed")
 async def create_borrowing(customer_id:int, book_id:int, _=Depends(required_role("admin", "librarian"))):
-    return await queries.create_borrowing(customer_id, book_id)
+    result =  await queries.create_borrowing(customer_id, book_id)
+    if result is None:
+        raise HTTPException(
+            status_code=409,
+            detail="Book is already borrowed"
+        )
+    return result
 
-# delete borrowing(returned book)
+# delete borrowing(returning book)
 @app.put("/borrowed/{borrowed_id}/return")
 async def return_borrowing(borrowed_id: int, _=Depends(required_role("admin", "librarian"))):
-    return await queries.return_borrowing(borrowed_id)
+    result = await queries.return_borrowing(borrowed_id)
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Borrowing not found or book has already been returned"
+        )
+    return result
+
+@app.get("/accounting")
+async def get_accounting(_=Depends(required_role("admin"))):
+    return await queries.get_accounting()
+
+
+@app.get("/accounting/total")
+async def get_total_accounting(_=Depends(required_role("admin"))):
+    return await queries.get_total_accounting()    
+    
