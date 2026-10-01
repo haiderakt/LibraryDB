@@ -149,5 +149,5 @@ async def get_accounting(_=Depends(required_role("admin"))):
 
 @app.get("/accounting/total")
 async def get_total_accounting(_=Depends(required_role("admin"))):
-    return await queries.get_total_accounting()    
-    
+    return await queries.get_total_accounting()
+
