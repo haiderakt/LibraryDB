@@ -144,6 +144,13 @@ When an access token expires, the frontend uses `POST /refresh` with the stored 
 | `PUT` | `/borrowed?customer_id=...&book_id=...` | Borrow a book |
 | `PUT` | `/borrowed/{borrowed_id}/return` | Return a book |
 
+### Accounting
+
+| Method | Route | Description |
+| --- | --- | --- |
+| `GET` | `/accounting` | List all accounting records |
+| `GET` | `/accounting/total` | Get total Amount |
+
 All routes except `/login` and `/refresh` require a bearer access token.
 
 ## Frontend Build
