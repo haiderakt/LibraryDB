@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Depends, HTTPException 
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-from db_queries import Queries 
+from db_queries import Queries
 from basemodels import Book, Customer, RefreshRequest
-from fastapi.security import OAuth2PasswordRequestForm 
+from fastapi.security import OAuth2PasswordRequestForm
 from auth import (
     get_current_user,
     create_access_token,
